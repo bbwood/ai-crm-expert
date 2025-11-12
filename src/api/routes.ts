@@ -288,26 +288,42 @@ router.post('/chat', async (req: Request, res: Response) => {
       });
     }
 
-    const { message, context, parsedInvoice } = req.body;
+    const { message, contexts, parsedInvoices } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
+    // Support both single and multiple invoices
+    const invoiceData = contexts || parsedInvoices
+      ? { contexts: contexts || [], parsedInvoices: parsedInvoices || [] }
+      : { contexts: [], parsedInvoices: [] };
+
     let responseText: string;
 
     if (aiService instanceof GeminiService) {
-      // Use Gemini's chat method
-      responseText = await aiService.chat(message, context, parsedInvoice);
-    } else {
-      // Use Anthropic's chat
-      const chatPrompt = `You are a helpful assistant analyzing an automotive service invoice. Here's the invoice data:
+      // Use Gemini's chat method with all invoices
+      const chatPrompt = `You are a helpful assistant analyzing automotive service invoices. The user has uploaded ${invoiceData.contexts.length} invoice(s). Here's all the data:
 
-${JSON.stringify({ parsedInvoice, context }, null, 2)}
+${JSON.stringify(invoiceData, null, 2)}
 
 User question: ${message}
 
-Please provide a helpful, concise answer to the user's question about this invoice.`;
+Please provide a helpful, concise answer. If the question is about a specific vehicle or customer, identify which invoice(s) to reference. If comparing multiple invoices, provide analysis across all relevant ones.`;
+
+      const model = (aiService as GeminiService).client.getGenerativeModel({ model: 'gemini-2.5-flash' });
+      const result = await model.generateContent(chatPrompt);
+      const response = await result.response;
+      responseText = response.text();
+    } else {
+      // Use Anthropic's chat with all invoices
+      const chatPrompt = `You are a helpful assistant analyzing automotive service invoices. The user has uploaded ${invoiceData.contexts.length} invoice(s). Here's all the data:
+
+${JSON.stringify(invoiceData, null, 2)}
+
+User question: ${message}
+
+Please provide a helpful, concise answer. If the question is about a specific vehicle or customer, identify which invoice(s) to reference. If comparing multiple invoices, provide analysis across all relevant ones.`;
 
       const response = await (aiService as AIService).client.messages.create({
         model: 'claude-sonnet-4-5-20250929',

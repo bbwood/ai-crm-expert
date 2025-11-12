@@ -361,9 +361,9 @@
             <div class="upload-area" id="uploadArea">
                 <div class="upload-icon">📄</div>
                 <div class="upload-text">Click to upload or drag and drop</div>
-                <div class="upload-hint">PDF files only (max 10MB)</div>
+                <div class="upload-hint">PDF files only (max 10MB each, multiple files supported)</div>
             </div>
-            <input type="file" id="fileInput" class="file-input" accept=".pdf">
+            <input type="file" id="fileInput" class="file-input" accept=".pdf" multiple>
             <div class="uploaded-file" id="uploadedFile">
                 <div class="file-info">
                     <span class="file-icon">📎</span>
@@ -399,9 +399,9 @@
     </div>
 
     <script>
-        let uploadedFile = null;
-        let parsedInvoice = null;
-        let context = null;
+        let uploadedFiles = [];
+        let parsedInvoices = [];
+        let contexts = [];
 
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
@@ -430,28 +430,30 @@
             e.preventDefault();
             uploadArea.classList.remove('dragging');
 
-            const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].type === 'application/pdf') {
-                handleFileUpload(files[0]);
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+            if (files.length > 0) {
+                handleMultipleFileUploads(files);
             }
         });
 
         // File input change
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFileUpload(e.target.files[0]);
+            const files = Array.from(e.target.files);
+            if (files.length > 0) {
+                handleMultipleFileUploads(files);
             }
         });
 
         // Remove file
         removeBtn.addEventListener('click', () => {
-            uploadedFile = null;
-            parsedInvoice = null;
-            context = null;
+            uploadedFiles = [];
+            parsedInvoices = [];
+            contexts = [];
             uploadedFileDiv.classList.remove('show');
             fileInput.value = '';
             messageInput.disabled = true;
             sendBtn.disabled = true;
+            generateBtn.disabled = true;
             clearMessages();
         });
 
@@ -466,8 +468,65 @@
             }
         });
 
+        async function handleMultipleFileUploads(files) {
+            clearMessages();
+            uploadedFiles = files;
+
+            fileName.textContent = files.length === 1 ? files[0].name : `${files.length} files selected`;
+            uploadedFileDiv.classList.add('show');
+
+            addMessage('ai', `Processing ${files.length} PDF file(s)...`);
+
+            for (const file of files) {
+                await handleSingleFileUpload(file);
+            }
+
+            addMessage('ai', `All files processed! You now have ${uploadedFiles.length} invoice(s) loaded. What would you like to know or do?`);
+            messageInput.disabled = false;
+            sendBtn.disabled = false;
+            generateBtn.disabled = false;
+            messageInput.focus();
+        }
+
+        async function handleSingleFileUpload(file) {
+            const formData = new FormData();
+            formData.append('invoice', file);
+
+            try {
+                const response = await fetch('/api/upload-invoice', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    parsedInvoices.push(data.parsed_invoice);
+                    contexts.push(data.context);
+
+                    // Show summary
+                    let summary = `✓ ${file.name}\n`;
+                    summary += `Customer: ${data.context.customer.name}\n`;
+                    summary += `Vehicle: ${data.context.vehicle.year} ${data.context.vehicle.make} ${data.context.vehicle.model}\n`;
+                    summary += `Total: $${data.parsed_invoice.total_amount || data.parsed_invoice.total || 'N/A'}`;
+
+                    addMessage('ai', summary);
+
+                    // Add the full context JSON as a collapsible message
+                    addJsonMessage(`Context for ${file.name} (Click to expand)`, {
+                        parsed_invoice: data.parsed_invoice,
+                        context: data.context
+                    });
+                } else {
+                    addMessage('ai', `✗ Error processing ${file.name}: ${data.message || 'Failed to process PDF'}`);
+                }
+            } catch (error) {
+                addMessage('ai', `✗ Error processing ${file.name}: ${error.message}`);
+            }
+        }
+
         async function handleFileUpload(file) {
-            uploadedFile = file;
+            uploadedFiles = [file];
             fileName.textContent = file.name;
             uploadedFileDiv.classList.add('show');
 
@@ -486,24 +545,24 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    parsedInvoice = data.parsed_invoice;
-                    context = data.context;
+                    parsedInvoices = [data.parsed_invoice];
+                    contexts = [data.context];
 
                     clearMessages();
 
                     // Show summary
                     let summary = `Great! I've analyzed ${file.name}. Here's what I found:\n\n`;
-                    summary += `Customer: ${context.customer.name}\n`;
-                    summary += `Vehicle: ${context.vehicle.year} ${context.vehicle.make} ${context.vehicle.model}\n`;
-                    summary += `Total: $${parsedInvoice.total_amount || parsedInvoice.total || 'N/A'}\n\n`;
+                    summary += `Customer: ${data.context.customer.name}\n`;
+                    summary += `Vehicle: ${data.context.vehicle.year} ${data.context.vehicle.make} ${data.context.vehicle.model}\n`;
+                    summary += `Total: $${data.parsed_invoice.total_amount || data.parsed_invoice.total || 'N/A'}\n\n`;
                     summary += `What would you like to know or do?`;
 
                     addMessage('ai', summary);
 
                     // Add the full context JSON as a collapsible message
                     addJsonMessage('Extracted Context (Click to expand)', {
-                        parsed_invoice: parsedInvoice,
-                        context: context
+                        parsed_invoice: data.parsed_invoice,
+                        context: data.context
                     });
 
                     messageInput.disabled = false;
@@ -519,7 +578,10 @@
         }
 
         async function generateRetentionMessage() {
-            if (!context) return;
+            if (contexts.length === 0) return;
+
+            // Use the first context for single file, or let user choose if multiple
+            const context = contexts[0];
 
             generateBtn.disabled = true;
             messageInput.disabled = true;
@@ -583,8 +645,8 @@
                     },
                     body: JSON.stringify({
                         message: message,
-                        context: context,
-                        parsedInvoice: parsedInvoice
+                        contexts: contexts,
+                        parsedInvoices: parsedInvoices
                     })
                 });
 
