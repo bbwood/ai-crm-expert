@@ -470,6 +470,12 @@
 
         async function handleMultipleFileUploads(files) {
             clearMessages();
+
+            // Clear old data when uploading new files
+            uploadedFiles = [];
+            parsedInvoices = [];
+            contexts = [];
+
             uploadedFiles = files;
 
             fileName.textContent = files.length === 1 ? files[0].name : `${files.length} files selected`;
@@ -580,8 +586,15 @@
         async function generateRetentionMessage() {
             if (contexts.length === 0) return;
 
-            // Use the first context for single file, or let user choose if multiple
-            const context = contexts[0];
+            let context;
+
+            // If multiple vehicles, let user choose
+            if (contexts.length > 1) {
+                context = await promptVehicleSelection();
+                if (!context) return; // User cancelled
+            } else {
+                context = contexts[0];
+            }
 
             generateBtn.disabled = true;
             messageInput.disabled = true;
@@ -678,7 +691,17 @@
 
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
-            contentDiv.textContent = content;
+
+            // Preserve line breaks and formatting
+            if (type === 'ai') {
+                // Convert markdown-style bold (**text**) to HTML
+                content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                // Convert line breaks to <br> tags
+                content = content.replace(/\n/g, '<br>');
+                contentDiv.innerHTML = content;
+            } else {
+                contentDiv.textContent = content;
+            }
 
             messageDiv.appendChild(avatar);
             messageDiv.appendChild(contentDiv);
@@ -769,6 +792,95 @@
             if (loadingMsg) {
                 loadingMsg.remove();
             }
+        }
+
+        function promptVehicleSelection() {
+            return new Promise((resolve) => {
+                // Group contexts by unique vehicle (using VIN or make/model/year)
+                const uniqueVehicles = new Map();
+
+                contexts.forEach((ctx) => {
+                    const vehicle = ctx.vehicle;
+                    const key = vehicle.vin || `${vehicle.year}-${vehicle.make}-${vehicle.model}`;
+
+                    if (!uniqueVehicles.has(key)) {
+                        uniqueVehicles.set(key, {
+                            context: ctx,
+                            invoiceCount: 1
+                        });
+                    } else {
+                        // Use the most recent visit
+                        const existing = uniqueVehicles.get(key);
+                        const existingDate = new Date(existing.context.service_history.recent_visit.date);
+                        const currentDate = new Date(ctx.service_history.recent_visit.date);
+
+                        if (currentDate > existingDate) {
+                            existing.context = ctx;
+                        }
+                        existing.invoiceCount++;
+                    }
+                });
+
+                const vehicleArray = Array.from(uniqueVehicles.values());
+
+                // Create a nice selection message
+                let selectionText = `🚗 You have ${vehicleArray.length} vehicle(s). Which one would you like to generate a message for?\n\n`;
+
+                vehicleArray.forEach((veh, index) => {
+                    const vehicle = veh.context.vehicle;
+                    const customer = veh.context.customer;
+                    const invoiceText = veh.invoiceCount > 1 ? ` (${veh.invoiceCount} invoices)` : '';
+
+                    selectionText += `${index + 1}. ${vehicle.year} ${vehicle.make} ${vehicle.model}${invoiceText}\n`;
+                    selectionText += `   Customer: ${customer.name}\n`;
+                    selectionText += `   Last visit: ${veh.context.service_history.recent_visit.date}\n\n`;
+                });
+
+                selectionText += 'Type the number (1, 2, 3, etc.) to select a vehicle:';
+
+                addMessage('ai', selectionText);
+
+                // Temporarily override the send message handler
+                const originalHandler = sendBtn.onclick;
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                messageInput.focus();
+
+                const handleSelection = () => {
+                    const input = messageInput.value.trim();
+                    const selection = parseInt(input);
+
+                    if (selection >= 1 && selection <= vehicleArray.length) {
+                        addMessage('user', input);
+                        const selectedVehicle = vehicleArray[selection - 1];
+                        const selectedContext = selectedVehicle.context;
+                        const vehicle = selectedContext.vehicle;
+                        addMessage('ai', `Great! Generating message for the ${vehicle.year} ${vehicle.make} ${vehicle.model}...`);
+
+                        // Restore original handler
+                        sendBtn.removeEventListener('click', handleSelection);
+                        messageInput.removeEventListener('keypress', handleSelectionKey);
+                        sendBtn.onclick = originalHandler;
+
+                        messageInput.value = '';
+                        resolve(selectedContext);
+                    } else {
+                        addMessage('ai', `Please enter a valid number between 1 and ${vehicleArray.length}`);
+                        messageInput.value = '';
+                        messageInput.focus();
+                    }
+                };
+
+                const handleSelectionKey = (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSelection();
+                    }
+                };
+
+                sendBtn.addEventListener('click', handleSelection);
+                messageInput.addEventListener('keypress', handleSelectionKey);
+            });
         }
 
         function clearMessages() {

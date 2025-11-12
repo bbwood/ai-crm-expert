@@ -42,19 +42,32 @@ if (aiProvider === 'gemini') {
   if (process.env.GEMINI_API_KEY) {
     console.log('Using Gemini AI provider');
     aiService = new GeminiService(process.env.GEMINI_API_KEY, promptComposer);
-    pdfParser = new PDFParserService(undefined, aiService);
+    pdfParser = new PDFParserService(
+      process.env.ANTHROPIC_API_KEY,
+      process.env.OPENAI_API_KEY,
+      aiService
+    );
   } else {
     console.warn('GEMINI_API_KEY not set - AI generation will not work');
-    pdfParser = new PDFParserService();
+    pdfParser = new PDFParserService(
+      process.env.ANTHROPIC_API_KEY,
+      process.env.OPENAI_API_KEY
+    );
   }
 } else {
   if (process.env.ANTHROPIC_API_KEY) {
     console.log('Using Anthropic AI provider');
     aiService = new AIService(process.env.ANTHROPIC_API_KEY, promptComposer);
-    pdfParser = new PDFParserService(process.env.ANTHROPIC_API_KEY);
+    pdfParser = new PDFParserService(
+      process.env.ANTHROPIC_API_KEY,
+      process.env.OPENAI_API_KEY
+    );
   } else {
     console.warn('ANTHROPIC_API_KEY not set - AI generation will not work');
-    pdfParser = new PDFParserService();
+    pdfParser = new PDFParserService(
+      undefined,
+      process.env.OPENAI_API_KEY
+    );
   }
 }
 
@@ -303,38 +316,113 @@ router.post('/chat', async (req: Request, res: Response) => {
 
     if (aiService instanceof GeminiService) {
       // Use Gemini's chat method with all invoices
-      const chatPrompt = `You are a helpful assistant analyzing automotive service invoices. The user has uploaded ${invoiceData.contexts.length} invoice(s). Here's all the data:
+      const model = (aiService as GeminiService).client.getGenerativeModel({
+        model: 'gemini-2.5-flash',
+        systemInstruction: `You are an expert automotive service invoice analyzer.
+
+FORMAT REQUIREMENTS - YOU MUST FOLLOW THIS EXACTLY:
+
+Start every response with an emoji section header. Use this template:
+
+📋 Summary:
+[Brief overview - max 2 sentences]
+
+🚗 Vehicle:
+• [Vehicle info as bullet points]
+• [One fact per bullet]
+
+💰 Services & Costs:
+1. [Service name] - $XX.XX
+2. [Service name] - $XX.XX
+Total: $XXX.XX
+
+→ Key Points:
+• [Important takeaway]
+• [Action item or insight]
+
+MANDATORY RULES - DO NOT BREAK THESE:
+1. Start EVERY section with an emoji header (📋 🚗 💰 📊 → ✓)
+2. Use bullet points (•) or numbered lists - NO paragraphs
+3. Bold all dollar amounts: **$XXX.XX**
+4. Blank line between each section
+5. Max 2 sentences if you must write prose
+6. Keep responses scannable and visual
+
+NEVER write prose paragraphs. ALWAYS use the structured format above.`
+      });
+
+      const userPrompt = `The user has uploaded ${invoiceData.contexts.length} invoice(s). Here's all the data:
 
 ${JSON.stringify(invoiceData, null, 2)}
 
 User question: ${message}
 
-Please provide a helpful, concise answer. If the question is about a specific vehicle or customer, identify which invoice(s) to reference. If comparing multiple invoices, provide analysis across all relevant ones.`;
+CRITICAL: Your response MUST start with "📋 Summary:" followed by sections with emoji headers. DO NOT write a paragraph response.`;
 
-      const model = (aiService as GeminiService).client.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const result = await model.generateContent(chatPrompt);
+      const result = await model.generateContent(userPrompt);
       const response = await result.response;
       responseText = response.text();
+
+      console.log('=== GEMINI CHAT RAW RESPONSE ===');
+      console.log(responseText);
+      console.log('=== END RAW RESPONSE ===');
     } else {
       // Use Anthropic's chat with all invoices
-      const chatPrompt = `You are a helpful assistant analyzing automotive service invoices. The user has uploaded ${invoiceData.contexts.length} invoice(s). Here's all the data:
+      const systemPrompt = `You are an expert automotive service invoice analyzer.
+
+FORMAT REQUIREMENTS - YOU MUST FOLLOW THIS EXACTLY:
+
+Start every response with an emoji section header. Use this template:
+
+📋 Summary:
+[Brief overview - max 2 sentences]
+
+🚗 Vehicle:
+• [Vehicle info as bullet points]
+• [One fact per bullet]
+
+💰 Services & Costs:
+1. [Service name] - $XX.XX
+2. [Service name] - $XX.XX
+Total: $XXX.XX
+
+→ Key Points:
+• [Important takeaway]
+• [Action item or insight]
+
+MANDATORY RULES - DO NOT BREAK THESE:
+1. Start EVERY section with an emoji header (📋 🚗 💰 📊 → ✓)
+2. Use bullet points (•) or numbered lists - NO paragraphs
+3. Bold all dollar amounts: **$XXX.XX**
+4. Blank line between each section
+5. Max 2 sentences if you must write prose
+6. Keep responses scannable and visual
+
+NEVER write prose paragraphs. ALWAYS use the structured format above.`;
+
+      const userPrompt = `The user has uploaded ${invoiceData.contexts.length} invoice(s). Here's all the data:
 
 ${JSON.stringify(invoiceData, null, 2)}
 
 User question: ${message}
 
-Please provide a helpful, concise answer. If the question is about a specific vehicle or customer, identify which invoice(s) to reference. If comparing multiple invoices, provide analysis across all relevant ones.`;
+CRITICAL: Your response MUST start with "📋 Summary:" followed by sections with emoji headers. DO NOT write a paragraph response.`;
 
       const response = await (aiService as AIService).client.messages.create({
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 1024,
+        system: systemPrompt,
         messages: [{
           role: 'user',
-          content: chatPrompt
+          content: userPrompt
         }]
       });
 
       responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+
+      console.log('=== CLAUDE CHAT RAW RESPONSE ===');
+      console.log(responseText);
+      console.log('=== END RAW RESPONSE ===');
     }
 
     res.json({

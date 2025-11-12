@@ -7,7 +7,7 @@ import { PromptComposerService } from './promptComposer';
  * Handles message generation using Google's Gemini API
  */
 export class GeminiService {
-  private client: GoogleGenerativeAI;
+  public client: GoogleGenerativeAI;
   private promptComposer: PromptComposerService;
   private model: string;
 
@@ -96,18 +96,58 @@ export class GeminiService {
    */
   async chat(message: string, context: any, parsedInvoice: any): Promise<string> {
     try {
-      const chatPrompt = `You are a helpful assistant analyzing an automotive service invoice. Here's the invoice data:
+      const model = this.client.getGenerativeModel({
+        model: this.model,
+        systemInstruction: `You are an expert automotive service invoice analyzer.
+
+FORMAT REQUIREMENTS - YOU MUST FOLLOW THIS EXACTLY:
+
+Start every response with an emoji section header. Use this template:
+
+📋 Summary:
+[Brief overview - max 2 sentences]
+
+🚗 Vehicle:
+• [Vehicle info as bullet points]
+• [One fact per bullet]
+
+💰 Services & Costs:
+1. [Service name] - $XX.XX
+2. [Service name] - $XX.XX
+Total: $XXX.XX
+
+→ Key Points:
+• [Important takeaway]
+• [Action item or insight]
+
+MANDATORY RULES - DO NOT BREAK THESE:
+1. Start EVERY section with an emoji header (📋 🚗 💰 📊 → ✓)
+2. Use bullet points (•) or numbered lists - NO paragraphs
+3. Bold all dollar amounts: **$XXX.XX**
+4. Blank line between each section
+5. Max 2 sentences if you must write prose
+6. Keep responses scannable and visual
+
+NEVER write prose paragraphs. ALWAYS use the structured format above.`
+      });
+
+      const userPrompt = `Here's the invoice data:
 
 ${JSON.stringify({ parsedInvoice, context }, null, 2)}
 
 User question: ${message}
 
-Please provide a helpful, concise answer to the user's question about this invoice.`;
+CRITICAL: Your response MUST start with "📋 Summary:" followed by sections with emoji headers. DO NOT write a paragraph response.`;
 
-      const model = this.client.getGenerativeModel({ model: this.model });
-      const result = await model.generateContent(chatPrompt);
+      const result = await model.generateContent(userPrompt);
       const response = await result.response;
-      return response.text();
+      const text = response.text();
+
+      console.log('=== GEMINI CHAT METHOD RAW RESPONSE ===');
+      console.log(text);
+      console.log('=== END RAW RESPONSE ===');
+
+      return text;
     } catch (error) {
       console.error('Error in chat:', error);
       throw new Error('Failed to get chat response');
@@ -116,22 +156,35 @@ Please provide a helpful, concise answer to the user's question about this invoi
 
   /**
    * Parse PDF with Gemini (using vision capabilities)
+   * Uses gemini-2.0-flash-exp for better availability and cost-effectiveness
    */
   async parsePDF(pdfBuffer: Buffer): Promise<any> {
     try {
       const base64Pdf = pdfBuffer.toString('base64');
 
-      const model = this.client.getGenerativeModel({ model: 'gemini-2.5-pro' });
+      // Try models in order of availability and capability
+      // Using stable model names that exist in v1beta API
+      const models = [
+        'gemini-2.0-flash-exp',      // Latest experimental (may have rate limits)
+        'gemini-1.5-flash',           // Stable, widely available
+        'gemini-1.5-pro'              // Most capable fallback
+      ];
 
-      const result = await model.generateContent([
-        {
-          inlineData: {
-            mimeType: 'application/pdf',
-            data: base64Pdf
-          }
-        },
-        {
-          text: `Extract all information from this automotive service invoice and return ONLY a JSON object with this exact structure (no markdown, no extra text):
+      let lastError;
+      for (const modelName of models) {
+        try {
+          console.log(`Attempting PDF parse with ${modelName}...`);
+          const model = this.client.getGenerativeModel({ model: modelName });
+
+          const result = await model.generateContent([
+            {
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: base64Pdf
+              }
+            },
+            {
+              text: `Extract all information from this automotive service invoice and return ONLY a JSON object with this exact structure (no markdown, no extra text):
 {
   "shop_name": "shop name (usually in upper left corner)",
   "shop_address": "shop address (usually in upper left corner)",
@@ -154,25 +207,54 @@ Please provide a helpful, concise answer to the user's question about this invoi
   "total_amount": total as number
 }
 
-IMPORTANT INSTRUCTIONS:
-1. The shop information (name, address, phone) is the SERVICE SHOP - typically in the UPPER LEFT corner
-2. The customer is the VEHICLE OWNER. This could be:
-   - An individual person's name
-   - A business/company name (for fleet vehicles)
-   - Another shop name (if it's a shop's vehicle being serviced)
-3. If the customer section shows a business/shop name, use that as the customer_name
-4. Do NOT use the service shop's information as the customer information - they are different
-5. If any field is not found, use null
-6. Be thorough and extract all services performed and any recommendations or declined work`
+CRITICAL INSTRUCTIONS FOR CUSTOMER NAME EXTRACTION:
+1. The shop information (name, address, phone) is the SERVICE SHOP - typically in the UPPER LEFT corner or header
+2. The CUSTOMER is the VEHICLE OWNER - NOT the service shop. Look for the customer name in these locations (in order of priority):
+   a. "Customer:", "Customer Name:", "Name:", "Owner:" field
+   b. "Bill To:" section
+   c. Near the vehicle information section
+   d. In a "Vehicle Owner:" or "Owner Information:" section
+   e. Any section clearly separate from the shop header/letterhead
+3. Customer names can be in ANY of these formats - extract them all:
+   - Proper case: "John Smith" or "John Q. Smith"
+   - ALL CAPS: "JOHN SMITH" or "JOHN Q SMITH"
+   - Mixed case: "JOHN Smith" or "John SMITH"
+   - With suffixes: "John Smith Jr." or "JOHN SMITH III"
+   - First name only followed by last name on next line
+   - Full names with middle names or initials
+   - Business names: "ABC Company" or "SMITH'S AUTO REPAIR"
+4. VALIDATION: After extraction, verify the customer name is NOT the same as the shop name. If they match, the customer name is WRONG - look again.
+5. If you truly cannot find any customer name after checking all locations, use null
+6. For all other fields, if not found, use null
+7. Be thorough and extract all services performed and any recommendations or declined work`
+            }
+          ]);
+
+          const response = await result.response;
+          const responseText = response.text();
+
+          // Remove markdown code blocks if present
+          const jsonText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+          const parsed = JSON.parse(jsonText);
+
+          console.log(`Successfully parsed PDF with ${modelName}`);
+          return parsed;
+
+        } catch (error: any) {
+          lastError = error;
+          // If it's a 503, 429, or 404 error, try next model
+          if (error?.status === 503 || error?.status === 429 || error?.status === 404 || error?.message?.includes('overloaded')) {
+            const reason = error.status === 404 ? 'not found' : error.status === 429 ? 'rate limited' : 'overloaded';
+            console.warn(`${modelName} unavailable (${reason}), trying next model...`);
+            continue;
+          }
+          // For other errors, throw immediately
+          throw error;
         }
-      ]);
+      }
 
-      const response = await result.response;
-      const responseText = response.text();
-
-      // Remove markdown code blocks if present
-      const jsonText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      return JSON.parse(jsonText);
+      // If we exhausted all models, throw the last error
+      throw lastError || new Error('All Gemini models failed');
     } catch (error) {
       console.error('Error parsing PDF with Gemini:', error);
       throw error;
