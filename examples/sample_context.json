@@ -1,0 +1,63 @@
+{
+  "customer": {
+    "id": "cust_bruce_wood",
+    "name": "Bruce Wood",
+    "phone": "+17079627159",
+    "email": "bruce@example.com",
+    "visit_count": 3,
+    "last_visit_date": "2024-08-20"
+  },
+  "vehicle": {
+    "id": "veh_1C6RR7TT8LS106319",
+    "year": 2020,
+    "make": "Ram",
+    "model": "1500 Classic",
+    "vin": "1C6RR7TT8LS106319",
+    "plate": "48846V3",
+    "current_est_mileage": 90500
+  },
+  "shop": {
+    "name": "Sport Auto Center",
+    "address": "200 E Chestnut St, Fort Bragg, CA 95437",
+    "phone": "707-964-5915",
+    "email": "info@sportautocenter.com"
+  },
+  "service_history": {
+    "recent_visit": {
+      "visit_id": "inv_2761",
+      "date": "2024-08-20",
+      "mileage": 87500,
+      "advisor": "Andrea Schnetgoecke",
+      "technician": "Danny Freitas",
+      "work_done": [
+        "Check tire tread and set pressure",
+        "Replace 12V battery"
+      ],
+      "amount": 181.07,
+      "status": "paid"
+    },
+    "past_recommendations": [
+      {
+        "description": "Tire replacement - 4",
+        "estimated_cost": 1063.96,
+        "category": "tires",
+        "urgency": "soon",
+        "status": "recommended",
+        "date_recommended": "2024-08-20"
+      }
+    ]
+  },
+  "current_findings": [
+    {
+      "system": "battery",
+      "description": "12V battery replaced; terminals cleaned",
+      "status": "completed"
+    },
+    {
+      "system": "tires",
+      "description": "Recommended 4-tire replacement",
+      "status": "recommended",
+      "urgency": "soon"
+    }
+  ]
+}

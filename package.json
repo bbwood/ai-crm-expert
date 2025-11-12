@@ -1,0 +1,37 @@
+{
+  "name": "ai-crm-expert",
+  "version": "1.0.0",
+  "description": "MVP Automotive Retention Expert - Multi-Layer Prompt System",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "node --require dotenv/config node_modules/.bin/tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node --require dotenv/config dist/index.js",
+    "test": "jest"
+  },
+  "keywords": [
+    "crm",
+    "automotive",
+    "ai",
+    "retention"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@google/generative-ai": "^0.24.1",
+    "date-fns": "^3.0.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "multer": "^2.0.0-rc.4",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.10.0",
+    "@types/pdf-parse": "^1.1.4",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
