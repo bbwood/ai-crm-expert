@@ -89,8 +89,15 @@ export class PromptComposerService {
     // Recent visit section
     if (service_history.recent_visit) {
       const visit = service_history.recent_visit;
+
+      // Calculate days since visit
+      const visitDate = new Date(visit.date);
+      const today = new Date();
+      const daysSince = Math.floor((today.getTime() - visitDate.getTime()) / (1000 * 60 * 60 * 24));
+
       contextText += '## Recent Visit\n';
       contextText += `- **Date**: ${visit.date}\n`;
+      contextText += `- **Days Since Visit**: ${daysSince} days ago\n`;
       contextText += `- **Mileage**: ${visit.mileage.toLocaleString()} miles\n`;
       if (visit.advisor) contextText += `- **Service Advisor**: ${visit.advisor}\n`;
       if (visit.technician) contextText += `- **Technician**: ${visit.technician}\n`;

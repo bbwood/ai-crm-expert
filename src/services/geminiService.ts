@@ -67,7 +67,7 @@ export class GeminiService {
     const parts = responseText.split('---');
 
     let message = responseText;
-    let scores = { clarity: 10, trust_tone: 10, retention_impact: 10 }; // Default scores
+    let scores = { clarity: 5, trust_tone: 5, retention_impact: 5 }; // Default scores (neutral, not perfect)
 
     if (parts.length >= 2) {
       message = parts[0].trim();
@@ -80,9 +80,27 @@ export class GeminiService {
       const trustMatch = scoresSection.match(/(?:Trust|Trust\s*(?:&|and)?\s*Tone)[:\s]+(\d+)/i);
       const valueMatch = scoresSection.match(/(?:Value|Retention\s*Impact)[:\s]+(\d+)/i);
 
-      if (clarityMatch) scores.clarity = parseInt(clarityMatch[1]);
-      if (trustMatch) scores.trust_tone = parseInt(trustMatch[1]);
-      if (valueMatch) scores.retention_impact = parseInt(valueMatch[1]);
+      let parsedAnyScore = false;
+      if (clarityMatch) {
+        scores.clarity = parseInt(clarityMatch[1]);
+        parsedAnyScore = true;
+      }
+      if (trustMatch) {
+        scores.trust_tone = parseInt(trustMatch[1]);
+        parsedAnyScore = true;
+      }
+      if (valueMatch) {
+        scores.retention_impact = parseInt(valueMatch[1]);
+        parsedAnyScore = true;
+      }
+
+      // Log warning if no scores were parsed
+      if (!parsedAnyScore) {
+        console.warn('⚠️  Score parsing failed - using default scores (5/5/5)');
+        console.warn('Scores section:', scoresSection.substring(0, 200));
+      }
+    } else {
+      console.warn('⚠️  No score separator found - using default scores (5/5/5)');
     }
 
     // Remove "SELF-REVIEW SCORES:" header if present in message

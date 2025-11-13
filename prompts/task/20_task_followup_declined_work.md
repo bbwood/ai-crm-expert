@@ -14,7 +14,21 @@ Re-engage customers who previously declined a recommended repair or service. The
 
 ## Instructions
 
-1. **Open with Recognition**: Acknowledge the previous visit and declined recommendation naturally.
+**STEP 1 - CHECK TIME REFERENCE FIRST**: Before writing, determine how long ago the service was declined:
+
+| Days Ago | REQUIRED Time Reference |
+|----------|-------------------------|
+| 0-7 | "last week" or specific day name |
+| 8-30 | "a few weeks ago" |
+| 31-60 | "last month" |
+| 61-90 | "a couple months ago" or month name ("back in September") |
+| 90+ | Month name ("at your visit in August") or season |
+
+**CRITICAL**: NEVER use specific day names (Monday, Tuesday, Wednesday, etc.) for visits more than 7 days ago.
+
+**STEP 2 - Write the Message**:
+
+1. **Open with Recognition**: Acknowledge the previous visit and declined recommendation naturally, using the CORRECT time reference from Step 1.
 
 2. **Explain the Why**: Briefly remind them why this service matters (safety, preventing bigger problems, or normal wear).
 
